@@ -7,34 +7,25 @@ import requests
 from bs4 import BeautifulSoup
 
 # ==========================================
-# 0. 配置與 Webhook 初始化
+# 0. 配置與 Webhook 初始化 (雙重備援機制)
 # ==========================================
-DISCORD_WEBHOOK_URL = os.environ.get(
-    "DISCORD_WEBHOOK_URL",
-    "https://discord.com/api/webhooks/1549295053904810004/tvILj9fi8yjbyxIMuorK29tngtxR_dMPN4-5b7k00OIGR4-Po-crqfkSIe1tXu4jZ5qb"
-).strip()
+# 優先讀取環境變數，若無則使用固定備援 Webhook
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+if not DISCORD_WEBHOOK_URL:
+    DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1549295053904810004/tvILj9fi8yjbyxIMuorK29tngtxR_dMPN4-5b7k00OIGR4-Po-crqfkSIe1tXu4jZ5qb"
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://bqmnfoecwmsrlxegscap.supabase.co").strip()
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_s9savKYITCSHuspOkLyLFg_HgRNwb2d").strip()
 
-supabase = None
-try:
-    from supabase import create_client, Client
-    if SUPABASE_URL and SUPABASE_KEY:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception:
-    pass
-
 def send_discord_msg(message):
-    if not DISCORD_WEBHOOK_URL:
-        print("❌ 致命錯誤: 未設定 DISCORD_WEBHOOK_URL 環境變數！")
-        return 400
+    print(f"📡 準備推播至 Discord Webhook: {DISCORD_WEBHOOK_URL[:45]}...")
     try:
         chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
         res_code = 200
         for chunk in chunks:
             res = requests.post(DISCORD_WEBHOOK_URL, json={"content": chunk}, timeout=10)
             res_code = res.status_code
+            print(f"👉 Discord 推播狀態碼: {res_code}")
             time.sleep(0.5)
         return res_code
     except Exception as e:
@@ -42,14 +33,13 @@ def send_discord_msg(message):
         return 500
 
 # ==========================================
-# 1. 雙場地自動容錯賽果擷取器
+# 1. 安全抓取派彩 (自動嘗試 HV 與 ST 場地)
 # ==========================================
-def fetch_real_race_results(race_date_str, venue="HV", total_races=9):
+def fetch_real_race_results(race_date_str, venue="HV", total_races=11):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     all_results = {}
     formatted_date = race_date_str.replace("-", "/")
 
-    # 先用指定的 venue 抓，若抓不到自動切換 ST/HV 備援
     venues_to_try = [venue, "HV" if venue == "ST" else "ST"]
     
     for v in venues_to_try:
@@ -82,7 +72,7 @@ def fetch_real_race_results(race_date_str, venue="HV", total_races=9):
                 continue
         
         if all_results:
-            print(f"✅ 成功從場地 {v} 抓取到 {len(all_results)} 場賽果！")
+            print(f"✅ 成功從 {v} 抓取到 {len(all_results)} 場賽果！")
             return all_results, v
 
     return {}, venue
@@ -90,15 +80,17 @@ def fetch_real_race_results(race_date_str, venue="HV", total_races=9):
 # ==========================================
 # 2. 歸因主程序
 # ==========================================
-def run_attribution(target_date="2026-10-14", default_venue="HV"):
-    print(f"🚀 開始執行 Agent E 賽後歸因: {target_date} (預設場地: {default_venue})")
+def run_attribution():
+    target_date = os.environ.get("TARGET_DATE", "2026-10-14")
+    default_venue = os.environ.get("RACE_VENUE", "HV")
+
+    print(f"🚀 開始執行 Agent E 賽後歸因: {target_date} ({default_venue})")
     
     results_map, actual_venue = fetch_real_race_results(target_date, default_venue, 11)
 
     if not results_map:
-        err_msg = f"⚠️ **【Agent E 歸因通報】**\n系統於 {target_date} 未抓取到 {default_venue} 賽事派彩資料，請檢查馬會網頁或日期設定。"
+        err_msg = f"⚠️ **【Agent E 歸因通報】**\n系統於 {target_date} 未抓取到賽事派彩資料，請檢查馬會網頁或日期設定。"
         send_discord_msg(err_msg)
-        print("⚠️ 未抓到資料，已發送警報至 Discord。")
         return
 
     type_label = "跑馬地夜賽" if actual_venue == "HV" else "沙田日賽"
@@ -131,10 +123,7 @@ def run_attribution(target_date="2026-10-14", default_venue="HV"):
     ])
 
     full_payload = "\n".join(msg_lines)
-    status = send_discord_msg(full_payload)
-    print(f"🎉 歸因報告已推送至 Discord！HTTP Status: {status}")
+    send_discord_msg(full_payload)
 
 if __name__ == "__main__":
-    target_date = os.environ.get("TARGET_DATE", "2026-10-14")
-    venue = os.environ.get("RACE_VENUE", "HV")
-    run_attribution(target_date, venue)
+    run_attribution()
