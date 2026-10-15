@@ -9,23 +9,25 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 # ==========================================
-# 0. 配置與 Webhook 初始化 (擬真 Header 防阻擋)
+# 0. 配置與 Webhook 初始化 (徹底清理網址格式)
 # ==========================================
-RAW_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-if not RAW_WEBHOOK:
-    RAW_WEBHOOK = "https://discord.com/api/webhooks/1549295053904810004/tvILj9fi8yjbyxIMuorK29tngtxR_dMPN4-5b7k00OIGR4-Po-crqfkSIe1tXu4jZ5qb"
+DEFAULT_WEBHOOK = "https://discord.com/api/webhooks/1549295053904810004/tvILj9fi8yjbyxIMuorK29tngtxR_dMPN4-5b7k00OIGR4-Po-crqfkSIe1tXu4jZ5qb"
 
-DISCORD_WEBHOOK_URL = RAW_WEBHOOK.strip().replace("\n", "").replace("\r", "")
+raw_url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+
+# 若環境變數為空或未包含 https://，強制修復使用預設 URL
+if not raw_url or not raw_url.startswith("http"):
+    DISCORD_WEBHOOK_URL = DEFAULT_WEBHOOK
+else:
+    # 去除所有潛在的引號與空格
+    DISCORD_WEBHOOK_URL = raw_url.replace("'", "").replace('"', "").replace("\n", "").replace("\r", "").strip()
 
 def send_discord_msg(message):
-    print(f"📡 發送至 Discord (網址前綴: {DISCORD_WEBHOOK_URL[:45]}...)")
-    if not DISCORD_WEBHOOK_URL or "http" not in DISCORD_WEBHOOK_URL:
-        print("❌ 錯誤: Discord Webhook 網址不合法！")
-        return 400
-
+    print(f"📡 準備推播至 Discord Webhook (網址長度: {len(DISCORD_WEBHOOK_URL)})...")
+    
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
 
     try:
@@ -35,9 +37,9 @@ def send_discord_msg(message):
             payload = {"content": chunk}
             res = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=12)
             res_code = res.status_code
-            print(f"👉 Chunk [{idx+1}/{len(chunks)}] 發送 HTTP Status: {res_code}")
+            print(f"👉 Chunk [{idx+1}/{len(chunks)}] 發送狀態碼: {res_code}")
             if res_code not in [200, 204]:
-                print(f"⚠️ Discord 回傳失敗細節: {res.text}")
+                print(f"⚠️ Discord 回覆異常: {res.text}")
             time.sleep(0.8)
         return res_code
     except Exception as e:
