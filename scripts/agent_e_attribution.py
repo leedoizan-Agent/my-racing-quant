@@ -9,13 +9,12 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 # ==========================================
-# 0. 配置與 Webhook 初始化 (雙重修剪與強化除錯)
+# 0. 配置與 Webhook 初始化 (擬真 Header 防阻擋)
 # ==========================================
 RAW_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 if not RAW_WEBHOOK:
     RAW_WEBHOOK = "https://discord.com/api/webhooks/1549295053904810004/tvILj9fi8yjbyxIMuorK29tngtxR_dMPN4-5b7k00OIGR4-Po-crqfkSIe1tXu4jZ5qb"
 
-# 去除任何可能存在的不可見字元與空白
 DISCORD_WEBHOOK_URL = RAW_WEBHOOK.strip().replace("\n", "").replace("\r", "")
 
 def send_discord_msg(message):
@@ -24,15 +23,19 @@ def send_discord_msg(message):
         print("❌ 錯誤: Discord Webhook 網址不合法！")
         return 400
 
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     try:
-        # 嚴格限制每段長度 1500 字元，避免超過 Discord 2000 字限制
         chunks = [message[i:i+1500] for i in range(0, len(message), 1500)]
         res_code = 200
         for idx, chunk in enumerate(chunks):
             payload = {"content": chunk}
-            res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+            res = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=12)
             res_code = res.status_code
-            print(f"👉 Chunk [{idx+1}/{len(chunks)}] 發送結果 HTTP Status: {res_code}")
+            print(f"👉 Chunk [{idx+1}/{len(chunks)}] 發送 HTTP Status: {res_code}")
             if res_code not in [200, 204]:
                 print(f"⚠️ Discord 回傳失敗細節: {res.text}")
             time.sleep(0.8)
@@ -42,7 +45,7 @@ def send_discord_msg(message):
         return 500
 
 # ==========================================
-# 1. 極速 Playwright 賽果擷取 (備援模式包覆)
+# 1. 極速 Playwright 賽果擷取
 # ==========================================
 async def fetch_real_race_results_playwright(race_date_str="2026-10-14", venue="HV", total_races=9):
     formatted_date = race_date_str.replace("-", "/")
@@ -88,7 +91,7 @@ async def fetch_real_race_results_playwright(race_date_str="2026-10-14", venue="
 
             await browser.close()
     except Exception as e:
-        print(f"⚠️ Playwright 初始化例外，切換至備援資料: {e}")
+        print(f"⚠️ Playwright 初始化例外: {e}")
 
     return all_results
 
@@ -110,15 +113,14 @@ async def run_attribution():
         "----------------------------------"
     ]
 
-    # 若未能從網頁取得（或網絡超時），帶入賽果清單發送，確保 100% 產出戰報
     if not results_map:
-        print("⚠️ 未抓取到網頁實時動態，帶入標準賽果清單進行歸因推播...")
+        print("⚠️ 未能從網頁取得動態，帶入標準賽果清單發送...")
         msg_lines.append("🏁 **【全晚 9 場賽事已派彩結算完成】**")
     else:
         for r_no in range(1, len(results_map) + 1):
             placings = results_map.get(r_no, [])
             p1 = placings[0] if len(placings) > 0 else {"no": "-", "name": "無資料"}
-            p2 = placings[1] if len(placings) > 1 else {"no": "-", "name": "無資料"}
+            p2 = placings[1] if len(placings) > 0 else {"no": "-", "name": "無資料"}
             p3 = placings[2] if len(placings) > 2 else {"no": "-", "name": "無資料"}
 
             msg_lines.append(
