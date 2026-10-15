@@ -2,12 +2,14 @@ name: Agent E Post-Race Attribution System
 
 on:
   schedule:
-    - cron: '15 15 * * *'  # 夜賽 23:15 HKT
-    - cron: '20 10 * * *'  # 日賽 18:20 HKT
+    # 根據 HKJC 2026/27 馬季官方日曆設定觸發時間點
+    - cron: '20 10 * * *'  # 18:20 HKT (日賽結算: 約 18:00 結束)
+    - cron: '20 13 * * *'  # 21:20 HKT (黃昏賽結算: 約 21:00 結束)
+    - cron: '15 15 * * *'  # 23:15 HKT (夜賽結算: 約 23:00 結束)
   workflow_dispatch:
     inputs:
       target_date:
-        description: '賽事日期 (YYYY-MM-DD)'
+        description: '賽事日期 (格式: YYYY-MM-DD)'
         required: true
         default: '2026-10-14'
       venue:
@@ -27,11 +29,14 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Install Python Dependencies & Playwright Browser
         run: |
-          pip install supabase beautifulsoup4 requests numpy pandas
+          python -m pip install --upgrade pip
+          pip install supabase beautifulsoup4 requests numpy pandas playwright
+          playwright install chromium
+          playwright install-deps
 
-      - name: Run Attribution Script
+      - name: Run Agent E Attribution Script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
