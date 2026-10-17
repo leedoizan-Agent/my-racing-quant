@@ -9,37 +9,37 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 # ==========================================
-# 0. 配置與 Webhook 初始化 (徹底清理網址格式)
+# 0. 全新專屬 Webhook 配置 (含單雙引號與空白修剪防護)
 # ==========================================
-DEFAULT_WEBHOOK = "https://discord.com/api/webhooks/1549295053904810004/tvILj9fi8yjbyxIMuorK29tngtxR_dMPN4-5b7k00OIGR4-Po-crqfkSIe1tXu4jZ5qb"
+NEW_DEFAULT_WEBHOOK = "https://discord.com/api/webhooks/1560818612384825505/8OxeXsaekGiHqo-zhlKY-TbsP0UvYlkqb_mpAjJJ48cilIhKbB8lTAx9Dst7XnSCNpr_"
 
 raw_url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
-# 若環境變數為空或未包含 https://，強制修復使用預設 URL
+# 嚴格清洗網址：去除可能誤帶入的單雙引號、空格與換行符
 if not raw_url or not raw_url.startswith("http"):
-    DISCORD_WEBHOOK_URL = DEFAULT_WEBHOOK
+    DISCORD_WEBHOOK_URL = NEW_DEFAULT_WEBHOOK
 else:
-    # 去除所有潛在的引號與空格
     DISCORD_WEBHOOK_URL = raw_url.replace("'", "").replace('"', "").replace("\n", "").replace("\r", "").strip()
 
 def send_discord_msg(message):
-    print(f"📡 準備推播至 Discord Webhook (網址長度: {len(DISCORD_WEBHOOK_URL)})...")
+    print(f"📡 準備推播至全新專屬 Discord Webhook (網址長度: {len(DISCORD_WEBHOOK_URL)})...")
     
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     try:
+        # 分段發送，每段 1500 字元，避免超過 Discord 2000 字限制
         chunks = [message[i:i+1500] for i in range(0, len(message), 1500)]
         res_code = 200
         for idx, chunk in enumerate(chunks):
             payload = {"content": chunk}
             res = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers, timeout=12)
             res_code = res.status_code
-            print(f"👉 Chunk [{idx+1}/{len(chunks)}] 發送狀態碼: {res_code}")
+            print(f"👉 Chunk [{idx+1}/{len(chunks)}] 發送 HTTP 狀態碼: {res_code}")
             if res_code not in [200, 204]:
-                print(f"⚠️ Discord 回覆異常: {res.text}")
+                print(f"⚠️ Discord 回覆異樣: {res.text}")
             time.sleep(0.8)
         return res_code
     except Exception as e:
@@ -47,7 +47,7 @@ def send_discord_msg(message):
         return 500
 
 # ==========================================
-# 1. 極速 Playwright 賽果擷取
+# 1. 極速 Playwright 賽果擷取 (防卡死)
 # ==========================================
 async def fetch_real_race_results_playwright(race_date_str="2026-10-14", venue="HV", total_races=9):
     formatted_date = race_date_str.replace("-", "/")
@@ -116,7 +116,7 @@ async def run_attribution():
     ]
 
     if not results_map:
-        print("⚠️ 未能從網頁取得動態，帶入標準賽果清單發送...")
+        print("⚠️ 未抓取到網頁實時動態，帶入標準賽果清單發送...")
         msg_lines.append("🏁 **【全晚 9 場賽事已派彩結算完成】**")
     else:
         for r_no in range(1, len(results_map) + 1):
